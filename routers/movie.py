@@ -4,8 +4,7 @@ from fastapi import Path, Query, Depends
 #Query nos permite hacer validacion de datos en los parametros query
 from fastapi.responses import JSONResponse
 #importamos la clase de respuesta en HTML
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import List
 from config.database import Session
 #importamos la session, el engine y la base 
 from models.movie import Movie as MovieModel #No queremos confundir nombres==
@@ -16,47 +15,11 @@ from services.movie import MovieService
 movie_router = APIRouter() #Es como crear una aplicacion
 #pero a nivel de router.
 
+from schemas.movie import Movie
+
 
 #Tomamos todas las rutas que tengan que ver con movie.
 #Cambiariamos el decorador @app por @movie_router, en cada ruta
-
-
-#Esquema de peliculas
-class Movie(BaseModel):
-     #Clase Field permite validacion de datos
-     id: Optional[int] = None #Seria un entero pero tambien puede no existir y por
-     # puede no existir y por defecto no existira
-     #Opcional de tipo entero
-     title: str = Field(min_length=5 ,max_length=15) 
-     #Valor por default
-     #Minimo 5 digitos
-     #Maximo 15 digitos
-     overview: str = Field(min_length=15 ,max_length=50) 
-     year: int = Field(le=2022)
-     #Menor a un integer 2022  
-     rating: float = Field(ge=0,le=10)
-     category: str = Field(min_length=4 ,max_length=25)
-     #Podemos eliminar el campo por defecto 
-     #en la definicion de la clase y ponerlo 
-     #en otro lugar
-     class Config:
-          json_schema_extra = {
-               "example" :
-               {
-                    "id": 1,
-                    "title": "Mi película",
-                    "overview": "Descripción de la pelicula",
-                    "year": 2022,
-                    "rating":9.8,
-                    "category": "Acción",
-                    }
-                    }
-
-     #Diccionario de atrbutos
-     #Se crea un esquema de ejemplo con los valores por defecto
-     #Para ser precargados en el body
-
-
 
 @movie_router.get('/movies', tags=["Movies"], response_model=List[Movie], status_code=200, dependencies=[Depends(JWTBearer())])
 def get_movies() -> List[Movie]:
@@ -135,20 +98,20 @@ def get_movies_by_category(category: str = Query(min_length=4,max_length=25)) ->
 
 #Notamos que las ultimas dos rutas especificadas son muy diferentes
 
-@movie_router.post('/movies', tags=['Movies'], response_model=dict,status_code=201)
+@movie_router.post('/movies', tags=['Movies'], response_model=dict,status_code=201, dependencies=[Depends(JWTBearer())]) 
 #Si se pasan parametros a la funcion, ya sea querys o de ruta seran requeridos por la funcion.
 # Con = Body() indicamos que pertenece al contenido de la peticion
 
 def create_movie(movie: Movie) -> dict:
      db = Session() #Creamos un db que es instancia de session
-     new_movie = MovieModel(**movie.dict())
+     #new_movie = MovieModel(**movie.dict())
      #Podemos mejor indicar pasar movie en forma de diccionario
      #indicamos con ** que se trata de un parametro y que extraeremos sus atributos
 
-     db.add(new_movie)
-     db.commit()
+     #db.add(new_movie)
+     #db.commit()
      #Agregamos la nueva pelicula a la base de datos
-
+     MovieService(db).create_movie(movie)
 
      #Ya no pedimos el objeto como parametro, sino un objeto que contenga cada uno de los valores
      #movies.append(movie)
@@ -156,24 +119,33 @@ def create_movie(movie: Movie) -> dict:
 #En la documentacion podemos cambiar el contenido del body al presionar 
 #el boton "Try it out"
 
-@movie_router.put('/movies/{id}', tags=["Movies"],response_model=dict, dependencies=[Depends(JWTBearer())])
-def update_movies(id: int, movie: Movie) -> dict: #El id si es necesario
+@movie_router.put('/movies/{id}', tags=["Movies"],response_model=dict,status_code=201, dependencies=[Depends(JWTBearer())])
+def update_movie(id: int, movie: Movie) -> dict: #El id si es necesario
      db = Session()
-     result = db.query(MovieModel).filter(MovieModel.id == id).first()
+     #result = db.query(MovieModel).filter(MovieModel.id == id).first()
      #Solo queremos uno
+          
+     #Modificacion de datos
+
+     #result.title = movie.title
+     #result.overview = movie.overview
+     #result.year = movie.year
+     #result.rating = movie.rating
+     #result.category = movie.category
+     #db.commit()
+
+     result = MovieService(db).get_movie(id)
+     #Validamos con nuestro servicio de encontrar la pelicula,
+     #guardamos la consulta en un resultado
+     #si no se encontro nada, entonces lanzamos uno error de no encontrado
 
      if not result:
           return JSONResponse(status_code=404,content={"message": "No encontrado"})
-     
-     #Modificacion de datos
 
-     result.title = movie.title
-     result.overview = movie.overview
-     result.year = movie.year
-     result.rating = movie.rating
-     result.category = movie.category
 
-     db.commit()
+     MovieService(db).update_movie(id,movie)
+     #Pero en caso de que si haya habido resultado,
+     #actualicemos la pelicula
      return JSONResponse(content={"message": "Se ha modificado la película"})
 
     
@@ -186,21 +158,33 @@ def update_movies(id: int, movie: Movie) -> dict: #El id si es necesario
 #                item['category'] = movie.category
 #                return JSONResponse(content={"message': 'Se ha modificado la película"})
 
-@movie_router.delete('/movies/{id}', tags=["Movies"],response_model=dict,status_code=200,dependencies=[Depends(JWTBearer())])
+@movie_router.delete('/movies/{id}', tags=["Movies"],response_model=dict,status_code=200, dependencies=[Depends(JWTBearer())])
 def delete_movie(id: int) -> dict:
 
      db = Session()
-     result = db.query(MovieModel).filter(MovieModel.id == id).first
+     #result = db.query(MovieModel).filter(MovieModel.id == id).first()
      #Solo queremos uno
 
+     #if not result:
+     #     return JSONResponse(status_code=404,content={"message": "No encontrado"})
+     
+     #db.delete(result)
+     #db.commit()
+
+     result = MovieService(db).get_movie(id)
+     #Validamos con nuestro servicio de encontrar la pelicula,
+     #guardamos la consulta en un resultado
+     #si no se encontro nada, entonces lanzamos uno error de no encontrado
 
      if not result:
           return JSONResponse(status_code=404,content={"message": "No encontrado"})
-     
-     db.delete(result)
-     db.commit()
 
+
+     MovieService(db).delete_movie(id)
+          #Pero en caso de que si haya habido resultado,
+     #actualicemos la pelicula
      return JSONResponse(status_code=200, content={"message": "Se ha eliminado película"})
+     
      #for item in movies:
       #    if item['id'] == id:
        #         movies.remove(item)
